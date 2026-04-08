@@ -32,6 +32,11 @@ bool funge_stack_push(FungeStack *self, funge_cell_t cell);
 size_t funge_stack_size(FungeStack *self);
 
 /**
+ * Create a clone of `self`.
+ */
+FungeStack *funge_stack_clone(FungeStack *self);
+
+/**
  * Create a new funge stack.
  * Return NULL if error occured.
  */

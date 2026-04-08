@@ -1,6 +1,6 @@
 # Simple Befunge Interpreter (SBI)
 
-A Befunge-98 interpreter.
+A Befunge-98 interpreter, with support for Concurrent Befunge.
 
 Passes most of Mycology with a few exceptions:
 - wraparounds with non-cardinal deltas don't work
@@ -8,7 +8,7 @@ Passes most of Mycology with a few exceptions:
 - There is an infinite loop at the conditional `_` at `204:52`. Replacing it with `>` allows it to proceed. I have not yet debugged why this is.
 - The special character at `199:3` is interpreted as 2 characters, which breaks the interpreter. It must be replaced with a single character, however doing so with any normal character causes it to not pass the test.
 
-`=`, `t`, `i`, and `o` not implemented.
+`=`, `i`, and `o` not implemented.
 
 No fingerprints are supported.
 

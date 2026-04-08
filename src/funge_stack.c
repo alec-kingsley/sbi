@@ -70,6 +70,26 @@ bool funge_stack_push(FungeStack *self, funge_cell_t cell) {
     return true;
 }
 
+FungeStack *funge_stack_clone(FungeStack *self) {
+    FungeStack *new = malloc(sizeof(FungeStack));
+    if (!new) goto funge_stack_clone_fail;
+
+    new->size = self->size;
+    new->capacity = self->capacity;
+
+    new->val = malloc(self->capacity);
+    if (!new->val) goto funge_stack_clone_fail;
+
+    memcpy(new->val, self->val, self->size * sizeof(funge_cell_t));
+
+    return new;
+
+funge_stack_clone_fail:
+    report_system_error(FILENAME ": memory allocation failure");
+    funge_stack_destroy(new);
+    return NULL;
+}
+
 FungeStack *funge_stack_create(void) {
     FungeStack *new = malloc(sizeof(FungeStack));
     if (!new) goto funge_stack_create_fail;
