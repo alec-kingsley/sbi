@@ -88,10 +88,12 @@ queue_create_fail:
 }
 
 void queue_destroy(Queue *self) {
-    if (self != NULL) {
-        if (self->free_fun != NULL) {
-            while (self->head != NULL) {
-                self->free_fun(queue_dequeue(self));
+    Node *node;
+    if (self) {
+        while (self->head != NULL) {
+            node = queue_dequeue(self);
+            if (self->free_fun != NULL) {
+                self->free_fun(node);
             }
         }
         free(self);

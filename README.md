@@ -10,7 +10,9 @@ Passes most of Mycology with a few exceptions:
 
 `=`, `i`, and `o` not implemented.
 
-No fingerprints are supported.
+Currently, only the `BOOL`, `NULL`, and `ROMA` fingerprints are supported. Mycology claims that these
+do not push the correct fingerprint number, however I have verified the number is correct against
+another interpreter. (Test code: `"LLUN"4($.a,@` should print `1314212940`)
 
 ## Installation
 

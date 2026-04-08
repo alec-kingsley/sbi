@@ -1,5 +1,4 @@
 #include "interpreter.h"
-#include "colors.h"
 #include "funge_stack.h"
 #include "queue.h"
 #include "reporter.h"
@@ -10,6 +9,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 #define FILENAME "interpreter.c"
@@ -25,6 +25,13 @@
 #define UNBUFFERED_IO 1
 
 uint16_t g_next_ip_id = 0;
+
+typedef struct {
+    funge_cell_t value;
+    /* functions for A through Z */
+    /* NULL if not existant */
+    void (*funcs[26])(Interpreter *self);
+} fingerprint_t;
 
 typedef struct {
     int32_t x;
@@ -51,6 +58,10 @@ typedef struct {
 
     vector_t storage_offset;
 
+    /* semantic stack for A through Z */
+    /* Stack<(*funcs[26])(Interpreter *self)> */
+    Stack *semantics[26];
+
     uint32_t id;
 } InstructionPointer;
 
@@ -68,6 +79,173 @@ struct Interpreter {
 };
 
 static void execute_instruction(Interpreter *self, char instr);
+
+static void reflect(Interpreter *self);
+
+/**
+ * =========================
+ *  Fingerprint Definitions
+ * =========================
+ */
+
+static void bool_a(Interpreter *self) {
+    InstructionPointer *ip = queue_peek(self->ips);
+    funge_cell_t a = funge_stack_pop(ip->stack);
+    funge_cell_t b = funge_stack_pop(ip->stack);
+    funge_stack_push(ip->stack, a && b);
+}
+
+static void bool_n(Interpreter *self) {
+    InstructionPointer *ip = queue_peek(self->ips);
+    funge_cell_t a = funge_stack_pop(ip->stack);
+    funge_cell_t b = funge_stack_pop(ip->stack);
+    funge_stack_push(ip->stack, !a);
+}
+
+static void bool_o(Interpreter *self) {
+    InstructionPointer *ip = queue_peek(self->ips);
+    funge_cell_t a = funge_stack_pop(ip->stack);
+    funge_cell_t b = funge_stack_pop(ip->stack);
+    funge_stack_push(ip->stack, a || b);
+}
+
+static void bool_x(Interpreter *self) {
+    InstructionPointer *ip = queue_peek(self->ips);
+    funge_cell_t a = funge_stack_pop(ip->stack);
+    funge_cell_t b = funge_stack_pop(ip->stack);
+    funge_stack_push(ip->stack, !!a ^ !!b);
+}
+
+static void roma_c(Interpreter *self) {
+    InstructionPointer *ip = queue_peek(self->ips);
+    funge_stack_push(ip->stack, 100);
+}
+
+static void roma_d(Interpreter *self) {
+    InstructionPointer *ip = queue_peek(self->ips);
+    funge_stack_push(ip->stack, 500);
+}
+
+static void roma_i(Interpreter *self) {
+    InstructionPointer *ip = queue_peek(self->ips);
+    funge_stack_push(ip->stack, 1);
+}
+
+static void roma_l(Interpreter *self) {
+    InstructionPointer *ip = queue_peek(self->ips);
+    funge_stack_push(ip->stack, 50);
+}
+
+static void roma_m(Interpreter *self) {
+    InstructionPointer *ip = queue_peek(self->ips);
+    funge_stack_push(ip->stack, 1000);
+}
+
+static void roma_v(Interpreter *self) {
+    InstructionPointer *ip = queue_peek(self->ips);
+    funge_stack_push(ip->stack, 5);
+}
+
+static void roma_x(Interpreter *self) {
+    InstructionPointer *ip = queue_peek(self->ips);
+    funge_stack_push(ip->stack, 10);
+}
+
+#define FINGERPRINT_ID(name)                                                   \
+    (name[3] + name[2] * 0x100 + name[1] * 0x10000 + name[0] * 0x1000000)
+
+static const fingerprint_t FINGERPRINTS[] = {
+    {FINGERPRINT_ID("BOOL"),
+     {
+         NULL,   /* A */
+         bool_a, /* B */
+         NULL,   /* C */
+         NULL,   /* D */
+         NULL,   /* E */
+         NULL,   /* F */
+         NULL,   /* G */
+         NULL,   /* H */
+         NULL,   /* I */
+         NULL,   /* J */
+         NULL,   /* K */
+         NULL,   /* L */
+         NULL,   /* M */
+         bool_n, /* N */
+         bool_o, /* O */
+         NULL,   /* P */
+         NULL,   /* Q */
+         NULL,   /* R */
+         NULL,   /* S */
+         NULL,   /* T */
+         NULL,   /* U */
+         NULL,   /* V */
+         NULL,   /* W */
+         bool_x, /* X */
+         NULL    /* Y */
+     }},
+    {FINGERPRINT_ID("NULL"),
+     {
+         reflect, /* A */
+         reflect, /* B */
+         reflect, /* C */
+         reflect, /* D */
+         reflect, /* E */
+         reflect, /* F */
+         reflect, /* G */
+         reflect, /* H */
+         reflect, /* I */
+         reflect, /* J */
+         reflect, /* K */
+         reflect, /* L */
+         reflect, /* M */
+         reflect, /* N */
+         reflect, /* O */
+         reflect, /* P */
+         reflect, /* Q */
+         reflect, /* R */
+         reflect, /* S */
+         reflect, /* T */
+         reflect, /* U */
+         reflect, /* V */
+         reflect, /* W */
+         reflect, /* X */
+         reflect  /* Y */
+     }},
+    {FINGERPRINT_ID("ROMA"),
+     {
+         NULL,   /* A */
+         NULL,   /* B */
+         roma_c, /* C */
+         roma_d, /* D */
+         NULL,   /* E */
+         NULL,   /* F */
+         NULL,   /* G */
+         NULL,   /* H */
+         roma_i, /* I */
+         NULL,   /* J */
+         NULL,   /* K */
+         roma_l, /* L */
+         roma_m, /* M */
+         NULL,   /* N */
+         NULL,   /* O */
+         NULL,   /* P */
+         NULL,   /* Q */
+         NULL,   /* R */
+         NULL,   /* S */
+         NULL,   /* T */
+         NULL,   /* U */
+         roma_v, /* V */
+         NULL,   /* W */
+         roma_x, /* X */
+         NULL    /* Y */
+     }},
+};
+
+/**
+ * ===========
+ *  Main Code
+ * ===========
+ */
 
 static void update_ip_y_contents_idx(Interpreter *self, int32_t y_diff) {
     InstructionPointer *ip = queue_peek(self->ips);
@@ -706,14 +884,38 @@ static void load_semantics(Interpreter *self) {
     InstructionPointer *ip = queue_peek(self->ips);
     funge_cell_t n = funge_stack_pop(ip->stack);
     funge_cell_t value = 0;
+    fingerprint_t fingerprint;
+    bool fingerprint_found = false;
+    void *func;
+    size_t i;
     while (n > 0) {
         value *= 0x100;
         value += funge_stack_pop(ip->stack);
         n--;
     }
-    /* TODO - actually load semantic */
-    (void)value;
-    reflect(self);
+    for (i = 0; i < sizeof(FINGERPRINTS) / sizeof(FINGERPRINTS[0])
+                && !fingerprint_found;
+         i++) {
+        if (FINGERPRINTS[i].value == value) {
+            fingerprint = FINGERPRINTS[i];
+            fingerprint_found = true;
+        }
+    }
+    if (fingerprint_found) {
+        funge_stack_push(ip->stack, FINGERPRINT_ID("NULL"));
+        for (i = 0; i < 26; i++) {
+            if (fingerprint.funcs[i] != NULL) {
+                /* hacky trick to shut up compiler about converting function
+                 * pointers */
+                /* TODO - is this actually dangerous? */
+                memcpy(&func, &fingerprint.funcs[i], sizeof(func));
+                stack_push(ip->semantics[i], func);
+            }
+        }
+        funge_stack_push(ip->stack, 1);
+    } else {
+        reflect(self);
+    }
 }
 
 static void unload_semantics(Interpreter *self) {
@@ -767,11 +969,22 @@ static void execute_instruction(Interpreter *self, char instr) {
      *
      * Change #defines at start of this file if above are implemented
      */
+    void (*func)(Interpreter *self);
+    void *void_func;
 
     if (isdigit(instr)) {
         funge_stack_push(ip->stack, instr - '0');
     } else if ('a' <= instr && instr <= 'f') {
         funge_stack_push(ip->stack, 10 + instr - 'a');
+    } else if ('A' <= instr && instr <= 'Z') {
+        if (ip->semantics[instr - 'A']) {
+            /* hacky trick to shut up compiler about converting function
+             * pointers */
+            /* TODO - is this actually dangerous? */
+            void_func = stack_peek(ip->semantics[instr - 'A']);
+            memcpy(&func, &void_func, sizeof(func));
+            func(self);
+        }
     } else {
         switch (instr) {
         case ' ':
@@ -910,10 +1123,10 @@ static void init_corners(Interpreter *self) {
 static InstructionPointer *instruction_pointer_clone(InstructionPointer *self) {
     InstructionPointer *new = calloc(1, sizeof(InstructionPointer));
     FungeStack *new_funge_stack, *original_funge_stack;
-    size_t i;
+    size_t i, j;
     if (!new) {
         report_system_error(FILENAME ": memory allocation failure");
-        goto instruction_pointer_create_fail;
+        goto instruction_pointer_clone_fail;
     }
 
     new->pos.x = self->pos.x;
@@ -931,19 +1144,30 @@ static InstructionPointer *instruction_pointer_clone(InstructionPointer *self) {
         stack_push(new->stack_stack, new_funge_stack);
     }
 
+    for (i = 0; i < 26; i++) {
+        new->semantics[i] = stack_create(NULL);
+        if (!new->semantics[i]) goto instruction_pointer_clone_fail;
+        for (j = 0; j < stack_len(self->semantics[i]); j++) {
+            stack_push(new->semantics[i],
+                       stack_get(self->semantics[i],
+                                 stack_len(self->semantics[i]) - j - 1));
+        }
+    }
+
     new->storage_offset.x = 0;
     new->storage_offset.y = 0;
 
     new->id = g_next_ip_id++;
 
     return new;
-instruction_pointer_create_fail:
+instruction_pointer_clone_fail:
     instruction_pointer_destroy(new);
     return NULL;
 }
 
 static InstructionPointer *instruction_pointer_create(void) {
     InstructionPointer *self = calloc(1, sizeof(InstructionPointer));
+    size_t i;
     if (!self) {
         report_system_error(FILENAME ": memory allocation failure");
         goto instruction_pointer_create_fail;
@@ -956,10 +1180,17 @@ static InstructionPointer *instruction_pointer_create(void) {
     self->momentum.y = 0;
 
     self->stack = funge_stack_create();
+    if (!self->stack) goto instruction_pointer_create_fail;
     self->stack_stack = stack_create((void (*)(void *))funge_stack_destroy);
+    if (!self->stack_stack) goto instruction_pointer_create_fail;
 
     self->storage_offset.x = 0;
     self->storage_offset.y = 0;
+
+    for (i = 0; i < 26; i++) {
+        self->semantics[i] = stack_create(NULL);
+        if (!self->semantics[i]) goto instruction_pointer_create_fail;
+    }
 
     self->id = g_next_ip_id++;
 
@@ -970,9 +1201,13 @@ instruction_pointer_create_fail:
 }
 
 static void instruction_pointer_destroy(InstructionPointer *self) {
+    size_t i;
     if (self) {
         funge_stack_destroy(self->stack);
         stack_destroy(self->stack_stack);
+        for (i = 0; i < 26; i++) {
+            stack_destroy(self->semantics[i]);
+        }
         free(self);
     }
 }
