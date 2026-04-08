@@ -2,8 +2,9 @@
 
 A Befunge-98 interpreter, with support for Concurrent Befunge.
 
+The wrapping algorithm is taken from [cfunge](https://github.com/VorpalBlade/cfunge/blob/29e4cfa1cc1f4553bf0e2908f819e913c32dfda8/src/funge-space/funge-space.c#L664) which in turn was attributed to Elliot Hird.
+
 Passes most of Mycology with a few exceptions:
-- wraparounds with non-cardinal deltas don't work
 - some parts of `y` instruction are not yet implemented
 - There is an infinite loop at the conditional `_` at `204:52`. Replacing it with `>` allows it to proceed. I have not yet debugged why this is.
 - The special character at `199:3` is interpreted as 2 characters, which breaks the interpreter. It must be replaced with a single character, however doing so with any normal character causes it to not pass the test.
@@ -13,6 +14,8 @@ Passes most of Mycology with a few exceptions:
 Currently, only the `BOOL`, `NULL`, and `ROMA` fingerprints are supported. Mycology claims that these
 do not push the correct fingerprint number, however I have verified the number is correct against
 another interpreter. (Test code: `"LLUN"4($.a,@` should print `1314212940`)
+
+I am not yet sure why Mycology doesn't like my fingerprints.
 
 ## Installation
 

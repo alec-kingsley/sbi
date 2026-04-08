@@ -98,7 +98,6 @@ static void bool_a(Interpreter *self) {
 static void bool_n(Interpreter *self) {
     InstructionPointer *ip = queue_peek(self->ips);
     funge_cell_t a = funge_stack_pop(ip->stack);
-    funge_cell_t b = funge_stack_pop(ip->stack);
     funge_stack_push(ip->stack, !a);
 }
 
@@ -270,6 +269,58 @@ static void update_ip_y_contents_idx(Interpreter *self, int32_t y_diff) {
     }
 }
 
+/**
+ * ============================================================
+ *  Begin algorithm taken from cfunge in turn from Elliot Hird
+ * ============================================================
+ */
+
+static funge_cell_t wrap_frac(funge_cell_t n, funge_cell_t d) {
+    return (n % d == 0 ? (n / d) : ((n + d) / d));
+}
+
+/**
+ * a = value in x or y
+ * r  = min in x or y
+ * s  = max in x or y
+ * da = delta in x or y
+ */
+static funge_cell_t wrap_frac_dir(funge_cell_t a, funge_cell_t r,
+                                  funge_cell_t s, funge_cell_t da) {
+    return (da > 0) ? wrap_frac(a - r, da) : wrap_frac(a - s, da);
+}
+
+static void wrap(Interpreter *self) {
+    InstructionPointer *ip = queue_peek(self->ips);
+    funge_cell_t m;
+#define FUNGESPACE_FY                                                          \
+    wrap_frac_dir(ip->pos.y, self->top_left.y, self->bottom_right.y,           \
+                  ip->momentum.y)
+#define FUNGESPACE_FX                                                          \
+    wrap_frac_dir(ip->pos.x, self->top_left.x, self->bottom_right.x,           \
+                  ip->momentum.x)
+    if (ip->momentum.x == 0)
+        m = FUNGESPACE_FY;
+    else if (ip->momentum.y == 0)
+        m = FUNGESPACE_FX;
+    else {
+        funge_cell_t fx = FUNGESPACE_FX;
+        funge_cell_t fy = FUNGESPACE_FY;
+        m = (fx < fy) ? fx : fy;
+    }
+
+    ip->pos.x = ip->pos.x - (m * ip->momentum.x);
+    ip->pos.y = ip->pos.y - (m * ip->momentum.y);
+#undef FUNGESPACE_FY
+#undef FUNGESPACE_FX
+}
+
+/**
+ * ==========================================================
+ *  End algorithm taken from cfunge in turn from Elliot Hird
+ * ==========================================================
+ */
+
 static void follow_momentum(Interpreter *self) {
     InstructionPointer *ip = queue_peek(self->ips);
     const int32_t old_y = ip->pos.y;
@@ -278,16 +329,11 @@ static void follow_momentum(Interpreter *self) {
     ip->pos.x += ip->momentum.x;
     ip->pos.y += ip->momentum.y;
 
-    if (ip->pos.x > self->bottom_right.x) {
-        ip->pos.x = self->top_left.x + (ip->pos.x - self->bottom_right.x - 1);
-    } else if (ip->pos.x < self->top_left.x) {
-        ip->pos.x = self->bottom_right.x - (self->top_left.x - ip->pos.x - 1);
-    }
+    if ((ip->pos.x > self->bottom_right.x) || (ip->pos.x < self->top_left.x)
 
-    if (ip->pos.y > self->bottom_right.y) {
-        ip->pos.y = self->top_left.y + (ip->pos.y - self->bottom_right.y - 1);
-    } else if (ip->pos.y < self->top_left.y) {
-        ip->pos.y = self->bottom_right.y - (self->top_left.y - ip->pos.y - 1);
+        || (ip->pos.y > self->bottom_right.y)
+        || (ip->pos.y < self->top_left.y)) {
+        wrap(self);
     }
 
     update_ip_y_contents_idx(self, ip->pos.y - old_y);
