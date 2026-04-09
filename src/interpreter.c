@@ -352,6 +352,10 @@ static char next_instruction(Interpreter *self) {
            && i < string_builder_len(self->contents)) {
         col++;
         instr = string_builder_get_char(self->contents, i);
+
+        /* form feed should be ignored */
+        if (instr == '\f') col--;
+
         i++;
     }
 
@@ -1034,7 +1038,6 @@ static void execute_instruction(Interpreter *self, char instr) {
     } else {
         switch (instr) {
         case ' ':
-        case 12: /* form feed */
         case 'z': break;
         case 'n': clear_stack(self); break;
         case '>': update_momentum(self, 1, 0); break;
@@ -1123,20 +1126,11 @@ void interpreter_run(Interpreter *self) {
 static bool init_contents(Interpreter *self, const char *fname) {
     FILE *file = fopen(fname, "r");
     char chunk[CHUNK_SIZE];
-    char *ptr;
     size_t n;
 
     if (file) {
         do {
-            n = 0;
-            ptr = chunk;
-            while (n < CHUNK_SIZE && fread(ptr, 1, 1, file) == 1) {
-                if (*ptr != 12) {
-                    /* 12 is form feed, illegal */
-                    ptr++;
-                    n++;
-                }
-            }
+            n = fread(chunk, sizeof(char), CHUNK_SIZE, file);
             string_builder_append_bytes(self->contents, chunk, n);
         } while (n == CHUNK_SIZE);
         fclose(file);
