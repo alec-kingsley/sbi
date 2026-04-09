@@ -591,11 +591,12 @@ static void begin_block(Interpreter *self) {
 
 static void end_block(Interpreter *self) {
     InstructionPointer *ip = queue_peek(self->ips);
-    FungeStack *temp_stack = funge_stack_create();
+    FungeStack *temp_stack;
     funge_cell_t n = funge_stack_pop(ip->stack);
     funge_cell_t i;
 
     if (!stack_is_empty(ip->stack_stack)) {
+        temp_stack = funge_stack_create();
 
         ip->storage_offset.y = funge_stack_pop(stack_peek(ip->stack_stack));
         ip->storage_offset.x = funge_stack_pop(stack_peek(ip->stack_stack));
