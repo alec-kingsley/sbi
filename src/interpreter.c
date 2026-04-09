@@ -72,7 +72,10 @@ static void instruction_pointer_destroy(InstructionPointer *self);
 struct Interpreter {
     StringBuilder *contents;
 
-    Queue *ips;
+    /* ips queue'd up to move into `self->ip` */
+    Queue *other_ips;
+
+    InstructionPointer *ip;
 
     vector_t top_left;
     vector_t bottom_right;
@@ -89,65 +92,54 @@ static void reflect(Interpreter *self);
  */
 
 static void bool_a(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_cell_t a = funge_stack_pop(ip->stack);
-    funge_cell_t b = funge_stack_pop(ip->stack);
-    funge_stack_push(ip->stack, a && b);
+    funge_cell_t a = funge_stack_pop(self->ip->stack);
+    funge_cell_t b = funge_stack_pop(self->ip->stack);
+    funge_stack_push(self->ip->stack, a && b);
 }
 
 static void bool_n(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_cell_t a = funge_stack_pop(ip->stack);
-    funge_stack_push(ip->stack, !a);
+    funge_cell_t a = funge_stack_pop(self->ip->stack);
+    funge_stack_push(self->ip->stack, !a);
 }
 
 static void bool_o(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_cell_t a = funge_stack_pop(ip->stack);
-    funge_cell_t b = funge_stack_pop(ip->stack);
-    funge_stack_push(ip->stack, a || b);
+    funge_cell_t a = funge_stack_pop(self->ip->stack);
+    funge_cell_t b = funge_stack_pop(self->ip->stack);
+    funge_stack_push(self->ip->stack, a || b);
 }
 
 static void bool_x(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_cell_t a = funge_stack_pop(ip->stack);
-    funge_cell_t b = funge_stack_pop(ip->stack);
-    funge_stack_push(ip->stack, !!a ^ !!b);
+    funge_cell_t a = funge_stack_pop(self->ip->stack);
+    funge_cell_t b = funge_stack_pop(self->ip->stack);
+    funge_stack_push(self->ip->stack, !!a ^ !!b);
 }
 
 static void roma_c(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_stack_push(ip->stack, 100);
+    funge_stack_push(self->ip->stack, 100);
 }
 
 static void roma_d(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_stack_push(ip->stack, 500);
+    funge_stack_push(self->ip->stack, 500);
 }
 
 static void roma_i(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_stack_push(ip->stack, 1);
+    funge_stack_push(self->ip->stack, 1);
 }
 
 static void roma_l(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_stack_push(ip->stack, 50);
+    funge_stack_push(self->ip->stack, 50);
 }
 
 static void roma_m(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_stack_push(ip->stack, 1000);
+    funge_stack_push(self->ip->stack, 1000);
 }
 
 static void roma_v(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_stack_push(ip->stack, 5);
+    funge_stack_push(self->ip->stack, 5);
 }
 
 static void roma_x(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_stack_push(ip->stack, 10);
+    funge_stack_push(self->ip->stack, 10);
 }
 
 #define FINGERPRINT_ID(name)                                                   \
@@ -247,23 +239,22 @@ static const fingerprint_t FINGERPRINTS[] = {
  */
 
 static void update_ip_y_contents_idx(Interpreter *self, int32_t y_diff) {
-    InstructionPointer *ip = queue_peek(self->ips);
     while (y_diff > 0) {
-        while (string_builder_get_char(self->contents, ip->y_contents_idx)
+        while (string_builder_get_char(self->contents, self->ip->y_contents_idx)
                != '\n') {
-            ip->y_contents_idx++;
+            self->ip->y_contents_idx++;
         }
-        ip->y_contents_idx++;
+        self->ip->y_contents_idx++;
         y_diff--;
     }
 
     while (y_diff < 0) {
-        ip->y_contents_idx--;
-        while (
-            ip->y_contents_idx != 0
-            && string_builder_get_char(self->contents, ip->y_contents_idx - 1)
-                   != '\n') {
-            ip->y_contents_idx--;
+        self->ip->y_contents_idx--;
+        while (self->ip->y_contents_idx != 0
+               && string_builder_get_char(self->contents,
+                                          self->ip->y_contents_idx - 1)
+                      != '\n') {
+            self->ip->y_contents_idx--;
         }
         y_diff++;
     }
@@ -291,17 +282,16 @@ static funge_cell_t wrap_frac_dir(funge_cell_t a, funge_cell_t r,
 }
 
 static void wrap(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
     funge_cell_t m;
 #define FUNGESPACE_FY                                                          \
-    wrap_frac_dir(ip->pos.y, self->top_left.y, self->bottom_right.y,           \
-                  ip->momentum.y)
+    wrap_frac_dir(self->ip->pos.y, self->top_left.y, self->bottom_right.y,     \
+                  self->ip->momentum.y)
 #define FUNGESPACE_FX                                                          \
-    wrap_frac_dir(ip->pos.x, self->top_left.x, self->bottom_right.x,           \
-                  ip->momentum.x)
-    if (ip->momentum.x == 0)
+    wrap_frac_dir(self->ip->pos.x, self->top_left.x, self->bottom_right.x,     \
+                  self->ip->momentum.x)
+    if (self->ip->momentum.x == 0)
         m = FUNGESPACE_FY;
-    else if (ip->momentum.y == 0)
+    else if (self->ip->momentum.y == 0)
         m = FUNGESPACE_FX;
     else {
         funge_cell_t fx = FUNGESPACE_FX;
@@ -309,8 +299,8 @@ static void wrap(Interpreter *self) {
         m = (fx < fy) ? fx : fy;
     }
 
-    ip->pos.x = ip->pos.x - (m * ip->momentum.x);
-    ip->pos.y = ip->pos.y - (m * ip->momentum.y);
+    self->ip->pos.x = self->ip->pos.x - (m * self->ip->momentum.x);
+    self->ip->pos.y = self->ip->pos.y - (m * self->ip->momentum.y);
 #undef FUNGESPACE_FY
 #undef FUNGESPACE_FX
 }
@@ -322,33 +312,32 @@ static void wrap(Interpreter *self) {
  */
 
 static void follow_momentum(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    const int32_t old_y = ip->pos.y;
+    const int32_t old_y = self->ip->pos.y;
 
     /* follow momentum */
-    ip->pos.x += ip->momentum.x;
-    ip->pos.y += ip->momentum.y;
+    self->ip->pos.x += self->ip->momentum.x;
+    self->ip->pos.y += self->ip->momentum.y;
 
-    if ((ip->pos.x > self->bottom_right.x) || (ip->pos.x < self->top_left.x)
+    if ((self->ip->pos.x > self->bottom_right.x)
+        || (self->ip->pos.x < self->top_left.x)
 
-        || (ip->pos.y > self->bottom_right.y)
-        || (ip->pos.y < self->top_left.y)) {
+        || (self->ip->pos.y > self->bottom_right.y)
+        || (self->ip->pos.y < self->top_left.y)) {
         wrap(self);
     }
 
-    update_ip_y_contents_idx(self, ip->pos.y - old_y);
+    update_ip_y_contents_idx(self, self->ip->pos.y - old_y);
 }
 
 static char next_instruction(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
     char instr = ' ';
     int32_t col;
     size_t i;
     follow_momentum(self);
 
     col = self->top_left.x - 1;
-    i = ip->y_contents_idx;
-    while (col != ip->pos.x && instr != '\n'
+    i = self->ip->y_contents_idx;
+    while (col != self->ip->pos.x && instr != '\n'
            && i < string_builder_len(self->contents)) {
         col++;
         instr = string_builder_get_char(self->contents, i);
@@ -359,7 +348,7 @@ static char next_instruction(Interpreter *self) {
         i++;
     }
 
-    if (col != ip->pos.x || instr == '\n' || instr == '\r') {
+    if (col != self->ip->pos.x || instr == '\n' || instr == '\r') {
         instr = ' ';
     }
 
@@ -367,101 +356,88 @@ static char next_instruction(Interpreter *self) {
 }
 
 static void reflect(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
     vector_t reflection;
-    reflection.x = -ip->momentum.x;
-    reflection.y = -ip->momentum.y;
-    ip->momentum = reflection;
+    reflection.x = -self->ip->momentum.x;
+    reflection.y = -self->ip->momentum.y;
+    self->ip->momentum = reflection;
 }
 
 static void duplicate_top(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_cell_t top = funge_stack_pop(ip->stack);
-    funge_stack_push(ip->stack, top);
-    funge_stack_push(ip->stack, top);
+    funge_cell_t top = funge_stack_pop(self->ip->stack);
+    funge_stack_push(self->ip->stack, top);
+    funge_stack_push(self->ip->stack, top);
 }
 
 static void update_momentum(Interpreter *self, int32_t new_x, int32_t new_y) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    ip->momentum.x = new_x;
-    ip->momentum.y = new_y;
+    self->ip->momentum.x = new_x;
+    self->ip->momentum.y = new_y;
 }
 
 static void logical_not(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_stack_push(ip->stack, !funge_stack_pop(ip->stack));
+    funge_stack_push(self->ip->stack, !funge_stack_pop(self->ip->stack));
 }
 
 static void add(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_cell_t b = funge_stack_pop(ip->stack);
-    funge_cell_t a = funge_stack_pop(ip->stack);
-    funge_stack_push(ip->stack, a + b);
+    funge_cell_t b = funge_stack_pop(self->ip->stack);
+    funge_cell_t a = funge_stack_pop(self->ip->stack);
+    funge_stack_push(self->ip->stack, a + b);
 }
 
 static void subtract(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_cell_t b = funge_stack_pop(ip->stack);
-    funge_cell_t a = funge_stack_pop(ip->stack);
-    funge_stack_push(ip->stack, a - b);
+    funge_cell_t b = funge_stack_pop(self->ip->stack);
+    funge_cell_t a = funge_stack_pop(self->ip->stack);
+    funge_stack_push(self->ip->stack, a - b);
 }
 
 static void multiply(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_cell_t b = funge_stack_pop(ip->stack);
-    funge_cell_t a = funge_stack_pop(ip->stack);
-    funge_stack_push(ip->stack, a * b);
+    funge_cell_t b = funge_stack_pop(self->ip->stack);
+    funge_cell_t a = funge_stack_pop(self->ip->stack);
+    funge_stack_push(self->ip->stack, a * b);
 }
 
 static void divide(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_cell_t b = funge_stack_pop(ip->stack);
-    funge_cell_t a = funge_stack_pop(ip->stack);
+    funge_cell_t b = funge_stack_pop(self->ip->stack);
+    funge_cell_t a = funge_stack_pop(self->ip->stack);
     if (b == 0) {
         /* TODO - technically this should prompt user */
-        funge_stack_push(ip->stack, 0);
+        funge_stack_push(self->ip->stack, 0);
     } else {
-        funge_stack_push(ip->stack, a / b);
+        funge_stack_push(self->ip->stack, a / b);
     }
 }
 
 static void remainder(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_cell_t b = funge_stack_pop(ip->stack);
-    funge_cell_t a = funge_stack_pop(ip->stack);
+    funge_cell_t b = funge_stack_pop(self->ip->stack);
+    funge_cell_t a = funge_stack_pop(self->ip->stack);
     if (b == 0) {
         /* TODO - technically this should prompt user */
-        funge_stack_push(ip->stack, 0);
+        funge_stack_push(self->ip->stack, 0);
     } else {
-        funge_stack_push(ip->stack, a % b);
+        funge_stack_push(self->ip->stack, a % b);
     }
 }
 
 static void swap(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_cell_t b = funge_stack_pop(ip->stack);
-    funge_cell_t a = funge_stack_pop(ip->stack);
-    funge_stack_push(ip->stack, b);
-    funge_stack_push(ip->stack, a);
+    funge_cell_t b = funge_stack_pop(self->ip->stack);
+    funge_cell_t a = funge_stack_pop(self->ip->stack);
+    funge_stack_push(self->ip->stack, b);
+    funge_stack_push(self->ip->stack, a);
 }
 
 static void greater(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_cell_t b = funge_stack_pop(ip->stack);
-    funge_cell_t a = funge_stack_pop(ip->stack);
-    funge_stack_push(ip->stack, a > b);
+    funge_cell_t b = funge_stack_pop(self->ip->stack);
+    funge_cell_t a = funge_stack_pop(self->ip->stack);
+    funge_stack_push(self->ip->stack, a > b);
 }
 
 static void string_mode(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    ip->string_mode = true;
-    ip->last_was_space = false;
+    self->ip->string_mode = true;
+    self->ip->last_was_space = false;
 }
 
 static void fetch_character(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
     char instr = next_instruction(self);
-    funge_stack_push(ip->stack, instr);
+    funge_stack_push(self->ip->stack, instr);
 }
 
 static void comment(Interpreter *self) {
@@ -472,24 +448,21 @@ static void comment(Interpreter *self) {
 }
 
 static void turn_left(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
     vector_t new_momentum;
-    new_momentum.x = ip->momentum.y;
-    new_momentum.y = -ip->momentum.x;
-    ip->momentum = new_momentum;
+    new_momentum.x = self->ip->momentum.y;
+    new_momentum.y = -self->ip->momentum.x;
+    self->ip->momentum = new_momentum;
 }
 
 static void turn_right(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
     vector_t new_momentum;
-    new_momentum.x = -ip->momentum.y;
-    new_momentum.y = ip->momentum.x;
-    ip->momentum = new_momentum;
+    new_momentum.x = -self->ip->momentum.y;
+    new_momentum.y = self->ip->momentum.x;
+    self->ip->momentum = new_momentum;
 }
 
 static void east_west_if(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_cell_t cell = funge_stack_pop(ip->stack);
+    funge_cell_t cell = funge_stack_pop(self->ip->stack);
     if (cell == 0) {
         update_momentum(self, 1, 0);
     } else {
@@ -498,8 +471,7 @@ static void east_west_if(Interpreter *self) {
 }
 
 static void north_south_if(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_cell_t cell = funge_stack_pop(ip->stack);
+    funge_cell_t cell = funge_stack_pop(self->ip->stack);
     if (cell == 0) {
         update_momentum(self, 0, 1);
     } else {
@@ -508,9 +480,8 @@ static void north_south_if(Interpreter *self) {
 }
 
 static void compare(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_cell_t b = funge_stack_pop(ip->stack);
-    funge_cell_t a = funge_stack_pop(ip->stack);
+    funge_cell_t b = funge_stack_pop(self->ip->stack);
+    funge_cell_t a = funge_stack_pop(self->ip->stack);
     if (a > b) {
         turn_right(self);
     } else if (a < b) {
@@ -519,98 +490,92 @@ static void compare(Interpreter *self) {
 }
 
 static void absolute_delta(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_cell_t y = funge_stack_pop(ip->stack);
-    funge_cell_t x = funge_stack_pop(ip->stack);
-    ip->momentum.x = x;
-    ip->momentum.y = y;
+    funge_cell_t y = funge_stack_pop(self->ip->stack);
+    funge_cell_t x = funge_stack_pop(self->ip->stack);
+    self->ip->momentum.x = x;
+    self->ip->momentum.y = y;
 }
 
 static void output_character(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    putchar(funge_stack_pop(ip->stack));
+    putchar(funge_stack_pop(self->ip->stack));
 }
 
 static void output_integer(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    printf("%i ", funge_stack_pop(ip->stack));
+    printf("%i ", funge_stack_pop(self->ip->stack));
 }
 
 static void input_character(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_stack_push(ip->stack, getchar());
+    funge_stack_push(self->ip->stack, getchar());
 }
 
 static void input_integer(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
     int i;
     scanf("%i", &i);
-    funge_stack_push(ip->stack, i);
+    funge_stack_push(self->ip->stack, i);
 }
 
 static void go_away(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
     uint8_t val = (rand() >> 4);
 
-    ip->momentum.x = val & 2 ? 0 : (val & 1 ? 1 : -1);
-    ip->momentum.y = val & 2 ? (val & 1 ? 1 : -1) : 0;
+    self->ip->momentum.x = val & 2 ? 0 : (val & 1 ? 1 : -1);
+    self->ip->momentum.y = val & 2 ? (val & 1 ? 1 : -1) : 0;
 }
 
 static void begin_block(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
     FungeStack *temp_stack = funge_stack_create();
-    funge_cell_t n = funge_stack_pop(ip->stack);
+    funge_cell_t n = funge_stack_pop(self->ip->stack);
     funge_cell_t i;
 
-    size_t preserved_ip_y_contents_idx = ip->y_contents_idx;
-    vector_t preserved_ip_pos = ip->pos;
+    size_t preserved_ip_y_contents_idx = self->ip->y_contents_idx;
+    vector_t preserved_ip_pos = self->ip->pos;
 
     for (i = 0; i < n; i++) {
-        funge_stack_push(temp_stack, funge_stack_pop(ip->stack));
+        funge_stack_push(temp_stack, funge_stack_pop(self->ip->stack));
     }
     for (i = 0; i > n; i--) {
-        funge_stack_push(ip->stack, '\0');
+        funge_stack_push(self->ip->stack, '\0');
     }
-    funge_stack_push(ip->stack, ip->storage_offset.x);
-    funge_stack_push(ip->stack, ip->storage_offset.y);
-    stack_push(ip->stack_stack, ip->stack);
-    ip->stack = funge_stack_create();
+    funge_stack_push(self->ip->stack, self->ip->storage_offset.x);
+    funge_stack_push(self->ip->stack, self->ip->storage_offset.y);
+    stack_push(self->ip->stack_stack, self->ip->stack);
+    self->ip->stack = funge_stack_create();
     while (funge_stack_size(temp_stack) != 0) {
-        funge_stack_push(ip->stack, funge_stack_pop(temp_stack));
+        funge_stack_push(self->ip->stack, funge_stack_pop(temp_stack));
     }
     funge_stack_destroy(temp_stack);
 
     follow_momentum(self);
 
-    ip->storage_offset.x = ip->pos.x;
-    ip->storage_offset.y = ip->pos.y;
+    self->ip->storage_offset.x = self->ip->pos.x;
+    self->ip->storage_offset.y = self->ip->pos.y;
 
-    ip->pos = preserved_ip_pos;
-    ip->y_contents_idx = preserved_ip_y_contents_idx;
+    self->ip->pos = preserved_ip_pos;
+    self->ip->y_contents_idx = preserved_ip_y_contents_idx;
 }
 
 static void end_block(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
     FungeStack *temp_stack;
-    funge_cell_t n = funge_stack_pop(ip->stack);
+    funge_cell_t n = funge_stack_pop(self->ip->stack);
     funge_cell_t i;
 
-    if (!stack_is_empty(ip->stack_stack)) {
+    if (!stack_is_empty(self->ip->stack_stack)) {
         temp_stack = funge_stack_create();
 
-        ip->storage_offset.y = funge_stack_pop(stack_peek(ip->stack_stack));
-        ip->storage_offset.x = funge_stack_pop(stack_peek(ip->stack_stack));
+        self->ip->storage_offset.y
+            = funge_stack_pop(stack_peek(self->ip->stack_stack));
+        self->ip->storage_offset.x
+            = funge_stack_pop(stack_peek(self->ip->stack_stack));
 
         for (i = 0; i < n; i++) {
-            funge_stack_push(temp_stack, funge_stack_pop(ip->stack));
+            funge_stack_push(temp_stack, funge_stack_pop(self->ip->stack));
         }
         for (i = 0; i > n; i--) {
-            funge_stack_pop(stack_peek(ip->stack_stack));
+            funge_stack_pop(stack_peek(self->ip->stack_stack));
         }
-        funge_stack_destroy(ip->stack);
-        ip->stack = stack_pop(ip->stack_stack);
+        funge_stack_destroy(self->ip->stack);
+        self->ip->stack = stack_pop(self->ip->stack_stack);
         while (funge_stack_size(temp_stack) != 0) {
-            funge_stack_push(ip->stack, funge_stack_pop(temp_stack));
+            funge_stack_push(self->ip->stack, funge_stack_pop(temp_stack));
         }
         funge_stack_destroy(temp_stack);
 
@@ -620,18 +585,16 @@ static void end_block(Interpreter *self) {
 }
 
 static void clear_stack(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    while (funge_stack_size(ip->stack) != 0) {
-        funge_stack_pop(ip->stack);
+    while (funge_stack_size(self->ip->stack) != 0) {
+        funge_stack_pop(self->ip->stack);
     }
 }
 
 static void add_column_left(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
     size_t contents_idx = 0;
     size_t contents_len = string_builder_len(self->contents) + 1;
     char contents_char;
-    ip->y_contents_idx += ip->pos.y - self->top_left.y;
+    self->ip->y_contents_idx += self->ip->pos.y - self->top_left.y;
     string_builder_insert_char(self->contents, 0, ' ');
     while (contents_idx < contents_len) {
         contents_char = string_builder_get_char(self->contents, contents_idx);
@@ -652,7 +615,6 @@ static void add_column_left(Interpreter *self) {
  * self->bottom_right.
  */
 static size_t get_contents_index(Interpreter *self, int32_t x, int32_t y) {
-    InstructionPointer *ip = queue_peek(self->ips);
     int32_t row = self->top_left.y;
     int32_t col;
     char c;
@@ -682,8 +644,8 @@ static size_t get_contents_index(Interpreter *self, int32_t x, int32_t y) {
             i++;
         } else {
             string_builder_insert_char(self->contents, i, ' ');
-            if (i < ip->y_contents_idx) {
-                ip->y_contents_idx++;
+            if (i < self->ip->y_contents_idx) {
+                self->ip->y_contents_idx++;
             }
         }
     }
@@ -691,10 +653,11 @@ static size_t get_contents_index(Interpreter *self, int32_t x, int32_t y) {
 }
 
 static void put(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_cell_t y = funge_stack_pop(ip->stack) + ip->storage_offset.y;
-    funge_cell_t x = funge_stack_pop(ip->stack) + ip->storage_offset.x;
-    funge_cell_t n = funge_stack_pop(ip->stack);
+    funge_cell_t y
+        = funge_stack_pop(self->ip->stack) + self->ip->storage_offset.y;
+    funge_cell_t x
+        = funge_stack_pop(self->ip->stack) + self->ip->storage_offset.x;
+    funge_cell_t n = funge_stack_pop(self->ip->stack);
     size_t contents_idx;
 
     if (y > self->bottom_right.y) {
@@ -703,7 +666,7 @@ static void put(Interpreter *self) {
         while (y < self->top_left.y) {
             self->top_left.y--;
             string_builder_insert_char(self->contents, 0, '\n');
-            ip->y_contents_idx++;
+            self->ip->y_contents_idx++;
         }
     }
 
@@ -721,9 +684,10 @@ static void put(Interpreter *self) {
 }
 
 static void get(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_cell_t y = funge_stack_pop(ip->stack) + ip->storage_offset.y;
-    funge_cell_t x = funge_stack_pop(ip->stack) + ip->storage_offset.x;
+    funge_cell_t y
+        = funge_stack_pop(self->ip->stack) + self->ip->storage_offset.y;
+    funge_cell_t x
+        = funge_stack_pop(self->ip->stack) + self->ip->storage_offset.x;
     size_t contents_idx;
     char c = '\0';
 
@@ -733,19 +697,18 @@ static void get(Interpreter *self) {
         c = string_builder_get_char(self->contents, contents_idx);
     }
 
-    funge_stack_push(ip->stack, c);
+    funge_stack_push(self->ip->stack, c);
 }
 
 static void store(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
     funge_cell_t y;
     funge_cell_t x;
-    funge_cell_t n = funge_stack_pop(ip->stack);
+    funge_cell_t n = funge_stack_pop(self->ip->stack);
     size_t contents_idx;
 
     follow_momentum(self);
-    y = ip->pos.y;
-    x = ip->pos.x;
+    y = self->ip->pos.y;
+    x = self->ip->pos.x;
 
     if (y > self->bottom_right.y) {
         self->bottom_right.y = y;
@@ -762,7 +725,7 @@ static void store(Interpreter *self) {
         while (x < self->top_left.x) {
             self->top_left.x--;
             string_builder_insert_char(self->contents, 0, '\n');
-            ip->y_contents_idx++;
+            self->ip->y_contents_idx++;
         }
     }
 
@@ -771,11 +734,10 @@ static void store(Interpreter *self) {
 }
 
 static void iterate(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_cell_t n = funge_stack_pop(ip->stack);
+    funge_cell_t n = funge_stack_pop(self->ip->stack);
     funge_cell_t i;
-    size_t preserved_ip_y_contents_idx = ip->y_contents_idx;
-    vector_t preserved_ip_pos = ip->pos;
+    size_t preserved_ip_y_contents_idx = self->ip->y_contents_idx;
+    vector_t preserved_ip_pos = self->ip->pos;
     char instr;
 
     do {
@@ -783,8 +745,8 @@ static void iterate(Interpreter *self) {
     } while (instr == ' ' || instr == ';');
 
     if (n > 0) {
-        ip->pos = preserved_ip_pos;
-        ip->y_contents_idx = preserved_ip_y_contents_idx;
+        self->ip->pos = preserved_ip_pos;
+        self->ip->y_contents_idx = preserved_ip_y_contents_idx;
         for (i = 0; i < n; i++) {
             execute_instruction(self, instr);
         }
@@ -792,8 +754,7 @@ static void iterate(Interpreter *self) {
 }
 
 static void jump(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_cell_t n = funge_stack_pop(ip->stack);
+    funge_cell_t n = funge_stack_pop(self->ip->stack);
     funge_cell_t i;
 
     if (n >= 0) {
@@ -810,130 +771,127 @@ static void jump(Interpreter *self) {
 }
 
 static void stack_under_stack(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_cell_t n = funge_stack_pop(ip->stack);
-    if (stack_is_empty(ip->stack_stack)) {
+    funge_cell_t n = funge_stack_pop(self->ip->stack);
+    if (stack_is_empty(self->ip->stack_stack)) {
         reflect(self);
     } else {
         while (n > 0) {
-            funge_stack_push(ip->stack,
-                             funge_stack_pop(stack_peek(ip->stack_stack)));
+            funge_stack_push(self->ip->stack, funge_stack_pop(stack_peek(
+                                                  self->ip->stack_stack)));
             n--;
         }
         while (n < 0) {
-            funge_stack_push(stack_peek(ip->stack_stack),
-                             funge_stack_pop(ip->stack));
+            funge_stack_push(stack_peek(self->ip->stack_stack),
+                             funge_stack_pop(self->ip->stack));
             n++;
         }
     }
 }
 
 static void sys_info(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_cell_t n = funge_stack_pop(ip->stack);
+    funge_cell_t n = funge_stack_pop(self->ip->stack);
     time_t now_time = time(NULL);
     struct tm now = *localtime(&now_time);
     size_t i;
-    size_t original_stack_size = funge_stack_size(ip->stack);
+    size_t original_stack_size = funge_stack_size(self->ip->stack);
     funge_cell_t cell;
 
     /* TODO - environment variables */
-    funge_stack_push(ip->stack, '\0');
+    funge_stack_push(self->ip->stack, '\0');
 
     /* TODO - command-line arguments */
-    funge_stack_push(ip->stack, '\0');
-    funge_stack_push(ip->stack, '\0');
+    funge_stack_push(self->ip->stack, '\0');
+    funge_stack_push(self->ip->stack, '\0');
 
     /* size of stack-stack cells for size of each stack from TOSS to BOSS */
-    for (i = stack_len(ip->stack_stack); i > 0; i--) {
-        funge_stack_push(ip->stack,
-                         stack_len(stack_get(ip->stack_stack, i - 1)));
+    for (i = stack_len(self->ip->stack_stack); i > 0; i--) {
+        funge_stack_push(self->ip->stack,
+                         stack_len(stack_get(self->ip->stack_stack, i - 1)));
     }
-    funge_stack_push(ip->stack, original_stack_size);
+    funge_stack_push(self->ip->stack, original_stack_size);
 
     /* number of stacks currently in use */
-    funge_stack_push(ip->stack, 1 + stack_len(ip->stack_stack));
+    funge_stack_push(self->ip->stack, 1 + stack_len(self->ip->stack_stack));
 
     /* current (hour * 256 * 256) + (minute * 256) + (second) */
-    funge_stack_push(ip->stack,
+    funge_stack_push(self->ip->stack,
                      now.tm_hour * 0x10000 + now.tm_min * 0x100 + now.tm_sec);
 
     /* current ((year - 1900) * 256 * 256) + (month * 256) + (day of month)
      */
-    funge_stack_push(ip->stack,
+    funge_stack_push(self->ip->stack,
                      now.tm_year * 0x10000 + now.tm_mon * 0x100 + now.tm_mday);
 
     /* "greatest point that contains non-space" */
-    funge_stack_push(ip->stack, self->bottom_right.x);
+    funge_stack_push(self->ip->stack, self->bottom_right.x);
 
-    funge_stack_push(ip->stack, self->bottom_right.y);
+    funge_stack_push(self->ip->stack, self->bottom_right.y);
 
     /* "least point that contains non-space" */
     /* TODO - interpret this. What if (0, 1) and (1, 0) have non-space, but
      * (0, 0) does? */
-    funge_stack_push(ip->stack, self->top_left.x);
+    funge_stack_push(self->ip->stack, self->top_left.x);
 
-    funge_stack_push(ip->stack, self->top_left.y);
+    funge_stack_push(self->ip->stack, self->top_left.y);
 
     /* storage offset */
-    funge_stack_push(ip->stack, ip->storage_offset.x);
-    funge_stack_push(ip->stack, ip->storage_offset.y);
+    funge_stack_push(self->ip->stack, self->ip->storage_offset.x);
+    funge_stack_push(self->ip->stack, self->ip->storage_offset.y);
 
     /* IP delta */
-    funge_stack_push(ip->stack, ip->momentum.x);
-    funge_stack_push(ip->stack, ip->momentum.y);
+    funge_stack_push(self->ip->stack, self->ip->momentum.x);
+    funge_stack_push(self->ip->stack, self->ip->momentum.y);
 
     /* IP position */
-    funge_stack_push(ip->stack, ip->pos.x);
-    funge_stack_push(ip->stack, ip->pos.y);
+    funge_stack_push(self->ip->stack, self->ip->pos.x);
+    funge_stack_push(self->ip->stack, self->ip->pos.y);
 
     /* current IP team number */
     /* TODO - change NetFunge, BeGlad, etc is implemented */
-    funge_stack_push(ip->stack, 0);
+    funge_stack_push(self->ip->stack, 0);
 
     /* current IP unique ID */
-    funge_stack_push(ip->stack, ip->id);
+    funge_stack_push(self->ip->stack, self->ip->id);
 
     /* number of scalars per vector */
     /* 2 for Befunge */
-    funge_stack_push(ip->stack, 2);
+    funge_stack_push(self->ip->stack, 2);
 
     /* path separator */
 #if defined(_WIN32) || defined(_WIN64)
-    funge_stack_push(ip->stack, '\\');
+    funge_stack_push(self->ip->stack, '\\');
 #else
-    funge_stack_push(ip->stack, '/');
+    funge_stack_push(self->ip->stack, '/');
 #endif
 
     /* operating paradigm */
     /* 1 represents `system()` behavior in C */
-    funge_stack_push(ip->stack, EQ_IMPLEMENTED ? 1 : 0);
+    funge_stack_push(self->ip->stack, EQ_IMPLEMENTED ? 1 : 0);
 
     /* version number */
-    funge_stack_push(ip->stack, VERSION_NUMBER);
+    funge_stack_push(self->ip->stack, VERSION_NUMBER);
 
     /* handprint */
-    funge_stack_push(ip->stack, HANDPRINT);
+    funge_stack_push(self->ip->stack, HANDPRINT);
 
     /* funge cell size in bytes */
-    funge_stack_push(ip->stack, sizeof(funge_cell_t));
+    funge_stack_push(self->ip->stack, sizeof(funge_cell_t));
 
     /* flags */
-    funge_stack_push(ip->stack, UNBUFFERED_IO << 4 | EQ_IMPLEMENTED << 3
-                                    | O_IMPLEMENTED << 2 | I_IMPLEMENTED << 1
-                                    | T_IMPLEMENTED);
+    funge_stack_push(self->ip->stack, UNBUFFERED_IO << 4 | EQ_IMPLEMENTED << 3
+                                          | O_IMPLEMENTED << 2
+                                          | I_IMPLEMENTED << 1 | T_IMPLEMENTED);
     if (n > 0) {
-        cell = funge_stack_get(ip->stack, (size_t)(n - 1));
-        while (funge_stack_size(ip->stack) != original_stack_size) {
-            funge_stack_pop(ip->stack);
+        cell = funge_stack_get(self->ip->stack, (size_t)(n - 1));
+        while (funge_stack_size(self->ip->stack) != original_stack_size) {
+            funge_stack_pop(self->ip->stack);
         }
-        funge_stack_push(ip->stack, cell);
+        funge_stack_push(self->ip->stack, cell);
     }
 }
 
 static void load_semantics(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_cell_t n = funge_stack_pop(ip->stack);
+    funge_cell_t n = funge_stack_pop(self->ip->stack);
     funge_cell_t value = 0;
     fingerprint_t fingerprint;
     bool fingerprint_found = false;
@@ -941,7 +899,7 @@ static void load_semantics(Interpreter *self) {
     size_t i;
     while (n > 0) {
         value *= 0x100;
-        value += funge_stack_pop(ip->stack);
+        value += funge_stack_pop(self->ip->stack);
         n--;
     }
     for (i = 0; i < sizeof(FINGERPRINTS) / sizeof(FINGERPRINTS[0])
@@ -953,66 +911,61 @@ static void load_semantics(Interpreter *self) {
         }
     }
     if (fingerprint_found) {
-        funge_stack_push(ip->stack, FINGERPRINT_ID("NULL"));
+        funge_stack_push(self->ip->stack, FINGERPRINT_ID("NULL"));
         for (i = 0; i < 26; i++) {
             if (fingerprint.funcs[i] != NULL) {
                 /* hacky trick to shut up compiler about converting function
                  * pointers */
                 /* TODO - is this actually dangerous? */
                 memcpy(&func, &fingerprint.funcs[i], sizeof(func));
-                stack_push(ip->semantics[i], func);
+                stack_push(self->ip->semantics[i], func);
             }
         }
-        funge_stack_push(ip->stack, 1);
+        funge_stack_push(self->ip->stack, 1);
     } else {
         reflect(self);
     }
 }
 
 static void unload_semantics(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    funge_stack_pop(ip->stack);
+    funge_stack_pop(self->ip->stack);
     /* TODO - actually unload semantic */
     reflect(self);
 }
 
 static void quit(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
     /* TODO - exit cleanly */
-    exit(funge_stack_pop(ip->stack));
+    exit(funge_stack_pop(self->ip->stack));
 }
 
 static void split(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-    InstructionPointer *new = instruction_pointer_clone(ip);
-    new->momentum.x = -ip->momentum.x;
-    new->momentum.y = -ip->momentum.y;
-    queue_enqueue(self->ips, new);
+    InstructionPointer *new = instruction_pointer_clone(self->ip);
+    new->momentum.x = -self->ip->momentum.x;
+    new->momentum.y = -self->ip->momentum.y;
+    queue_enqueue(self->other_ips, new);
 }
 
 static void execute_string_mode_instruction(Interpreter *self, char instr) {
-    InstructionPointer *ip = queue_peek(self->ips);
     if (instr == ' ') {
-        if (ip->last_was_space) {
+        if (self->ip->last_was_space) {
             while (instr == ' ') {
                 instr = next_instruction(self);
             }
-            ip->last_was_space = false;
+            self->ip->last_was_space = false;
         } else {
-            ip->last_was_space = true;
+            self->ip->last_was_space = true;
         }
     } else {
-        ip->last_was_space = false;
+        self->ip->last_was_space = false;
     }
     if (instr == '"') {
-        ip->string_mode = false;
+        self->ip->string_mode = false;
     } else {
-        funge_stack_push(ip->stack, instr);
+        funge_stack_push(self->ip->stack, instr);
     }
 }
 
 static void execute_instruction(Interpreter *self, char instr) {
-    InstructionPointer *ip = queue_peek(self->ips);
     /** ---- TODO ----
      * = - execute
      * i - input file
@@ -1024,15 +977,15 @@ static void execute_instruction(Interpreter *self, char instr) {
     void *void_func;
 
     if (isdigit(instr)) {
-        funge_stack_push(ip->stack, instr - '0');
+        funge_stack_push(self->ip->stack, instr - '0');
     } else if ('a' <= instr && instr <= 'f') {
-        funge_stack_push(ip->stack, 10 + instr - 'a');
+        funge_stack_push(self->ip->stack, 10 + instr - 'a');
     } else if ('A' <= instr && instr <= 'Z') {
-        if (ip->semantics[instr - 'A']) {
+        if (self->ip->semantics[instr - 'A']) {
             /* hacky trick to shut up compiler about converting function
              * pointers */
             /* TODO - is this actually dangerous? */
-            void_func = stack_peek(ip->semantics[instr - 'A']);
+            void_func = stack_peek(self->ip->semantics[instr - 'A']);
             memcpy(&func, &void_func, sizeof(func));
             func(self);
         }
@@ -1054,7 +1007,7 @@ static void execute_instruction(Interpreter *self, char instr) {
         case '"': string_mode(self); break;
         case '\'': fetch_character(self); break;
         case ';': comment(self); break;
-        case '$': funge_stack_pop(ip->stack); break;
+        case '$': funge_stack_pop(self->ip->stack); break;
         case '!': logical_not(self); break;
         case '+': add(self); break;
         case '-': subtract(self); break;
@@ -1090,28 +1043,27 @@ static void execute_instruction(Interpreter *self, char instr) {
 }
 
 void interpreter_run(Interpreter *self) {
-    InstructionPointer *ip = queue_peek(self->ips);
-
     char instr = string_builder_get_char(self->contents, 0);
-    while (!queue_is_empty(self->ips)) {
-        if (instr == '@' && !ip->string_mode) {
-            instruction_pointer_destroy(queue_dequeue(self->ips));
-            if (queue_is_empty(self->ips)) {
+    while (true) {
+        if (instr == '@' && !self->ip->string_mode) {
+            if (queue_is_empty(self->other_ips)) {
                 break;
+            } else {
+                instruction_pointer_destroy(self->ip);
+                self->ip = queue_dequeue(self->other_ips);
             }
-            ip = queue_peek(self->ips);
         } else {
-            if (ip->string_mode) {
+            if (self->ip->string_mode) {
                 execute_string_mode_instruction(self, instr);
             } else {
                 execute_instruction(self, instr);
             }
-            if (ip->string_mode || (instr != ' ' && instr != ';')) {
+            if (self->ip->string_mode || (instr != ' ' && instr != ';')) {
                 /* spaces and comments are tickless */
-                if (queue_len(self->ips) != 1) {
+                if (!queue_is_empty(self->other_ips)) {
                     /* rotate to next IP */
-                    queue_enqueue(self->ips, queue_dequeue(self->ips));
-                    ip = queue_peek(self->ips);
+                    queue_enqueue(self->other_ips, self->ip);
+                    self->ip = queue_dequeue(self->other_ips);
                 }
             }
         }
@@ -1255,7 +1207,6 @@ static void instruction_pointer_destroy(InstructionPointer *self) {
 
 Interpreter *interpreter_create(const char *fname) {
     Interpreter *self = calloc(1, sizeof(Interpreter));
-    InstructionPointer *ip;
     if (!self) {
         report_system_error(FILENAME ": memory allocation failure");
         goto interpreter_create_fail;
@@ -1274,13 +1225,12 @@ Interpreter *interpreter_create(const char *fname) {
         goto interpreter_create_fail;
     }
 
-    self->ips = queue_create((void (*)(void *))instruction_pointer_destroy);
-    if (!self->ips) goto interpreter_create_fail;
+    self->other_ips
+        = queue_create((void (*)(void *))instruction_pointer_destroy);
+    if (!self->other_ips) goto interpreter_create_fail;
 
-    ip = instruction_pointer_create();
-    if (!ip) goto interpreter_create_fail;
-
-    queue_enqueue(self->ips, ip);
+    self->ip = instruction_pointer_create();
+    if (!self->ip) goto interpreter_create_fail;
 
     init_corners(self);
 
@@ -1293,7 +1243,8 @@ interpreter_create_fail:
 void interpreter_destroy(Interpreter *self) {
     if (self) {
         string_builder_destroy(self->contents);
-        queue_destroy(self->ips);
+        queue_destroy(self->other_ips);
+        instruction_pointer_destroy(self->ip);
         free(self);
     }
 }
