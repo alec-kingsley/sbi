@@ -8,6 +8,9 @@ Passes most of Mycology with a few exceptions:
 - some parts of `y` instruction are not yet implemented
 - There is an infinite loop at the conditional `_` at `204:52`. Replacing it with `>` allows it to proceed. I have not yet debugged why this is.
 
+NOTE: The character at `199:3` is a special character. The Helix editor replaces this with several
+characters on save. Other editors may do the same. Be wary of this when modifying Mycology.
+
 `=`, `i`, and `o` not implemented.
 
 Currently, only the `BOOL`, `NULL`, and `ROMA` fingerprints are supported. Mycology claims that these
