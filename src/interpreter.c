@@ -81,7 +81,7 @@ struct Interpreter {
     vector_t bottom_right;
 };
 
-static void execute_instruction(Interpreter *self, char instr);
+static void execute_instruction(Interpreter *self, uint8_t instr);
 
 static void reflect(Interpreter *self);
 
@@ -330,7 +330,7 @@ static void follow_momentum(Interpreter *self) {
 }
 
 static char next_instruction(Interpreter *self) {
-    char instr = ' ';
+    uint8_t instr = ' ';
     int32_t col;
     size_t i;
     follow_momentum(self);
@@ -436,12 +436,12 @@ static void string_mode(Interpreter *self) {
 }
 
 static void fetch_character(Interpreter *self) {
-    char instr = next_instruction(self);
+    uint8_t instr = next_instruction(self);
     funge_stack_push(self->ip->stack, instr);
 }
 
 static void comment(Interpreter *self) {
-    char instr = ' ';
+    uint8_t instr = ' ';
     while (instr != ';') {
         instr = next_instruction(self);
     }
@@ -738,7 +738,7 @@ static void iterate(Interpreter *self) {
     funge_cell_t i;
     size_t preserved_ip_y_contents_idx = self->ip->y_contents_idx;
     vector_t preserved_ip_pos = self->ip->pos;
-    char instr;
+    uint8_t instr;
 
     do {
         instr = next_instruction(self);
@@ -945,7 +945,7 @@ static void split(Interpreter *self) {
     queue_enqueue(self->other_ips, new);
 }
 
-static void execute_string_mode_instruction(Interpreter *self, char instr) {
+static void execute_string_mode_instruction(Interpreter *self, uint8_t instr) {
     if (instr == ' ') {
         if (self->ip->last_was_space) {
             while (instr == ' ') {
@@ -965,7 +965,7 @@ static void execute_string_mode_instruction(Interpreter *self, char instr) {
     }
 }
 
-static void execute_instruction(Interpreter *self, char instr) {
+static void execute_instruction(Interpreter *self, uint8_t instr) {
     /** ---- TODO ----
      * = - execute
      * i - input file
@@ -1043,7 +1043,7 @@ static void execute_instruction(Interpreter *self, char instr) {
 }
 
 void interpreter_run(Interpreter *self) {
-    char instr = string_builder_get_char(self->contents, 0);
+    uint8_t instr = string_builder_get_char(self->contents, 0);
     while (true) {
         if (instr == '@' && !self->ip->string_mode) {
             if (queue_is_empty(self->other_ips)) {
