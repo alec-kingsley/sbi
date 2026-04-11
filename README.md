@@ -8,7 +8,7 @@ Passes Mycology, except for unimplemented fingerprints.
 
 `=`, `i`, and `o` not implemented.
 
-Currently, only the `BOOL`, `NULL`, and `ROMA` fingerprints are supported.
+Currently, only the `BOOL`, `NULL`, `MODU`, and `ROMA` fingerprints are supported.
 
 ## Installation
 
