@@ -12,7 +12,7 @@ Currently, only the `BOOL`, `NULL`, `MODU`, and `ROMA` fingerprints are supporte
 
 ## Installation
 
-Run `./install.sh` to install the `sbi`. It can be ran with `sbi <file name>`
+Run `./install.sh` to install the `sbi`. It can be run with `sbi <file name>`
 
 ## Testing
 
