@@ -18,10 +18,6 @@ function log_ok {
   echo -e "$PROMPT" "$@"
 }
 
-function prompt {
-  echo -ne "$PROMPT" "$@"
-}
-
 function log_err {
   echo -e "$PROMPT" "${RED}Error:${RESET}" "$@"
 }
