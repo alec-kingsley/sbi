@@ -86,9 +86,9 @@ static void shrink_funge_corners_to_fit(FungeSpace *self) {
     vector_t new_top_left = {INT32_MAX, INT32_MAX};
     vector_t new_bottom_right = {INT32_MIN, INT32_MIN};
     vector_t pos;
-    for (pos.y = self->funge_top_left.y; pos.y < self->funge_bottom_right.y;
+    for (pos.y = self->funge_top_left.y; pos.y <= self->funge_bottom_right.y;
          pos.y++) {
-        for (pos.x = self->funge_top_left.x; pos.x < self->funge_bottom_right.x;
+        for (pos.x = self->funge_top_left.x; pos.x <= self->funge_bottom_right.x;
              pos.x++) {
             c = funge_space_get(self, pos);
             if (c != ' ') {
@@ -150,8 +150,7 @@ void funge_space_put(FungeSpace *self, vector_t pos, funge_cell_t n) {
             || pos.x == self->funge_bottom_right.x
             || pos.y == self->funge_top_left.y
             || pos.y == self->funge_bottom_right.y) {
-            /* TODO - call when it actually works */
-            (void)shrink_funge_corners_to_fit;
+            shrink_funge_corners_to_fit(self);
         }
     }
 }
@@ -200,7 +199,6 @@ static bool read_file_to_funge_space(FungeSpace *self, FILE *file) {
     return pos.y != 0 || pos.x != 0;
 }
 
-/* TODO - throw error if empty */
 FungeSpace *funge_space_create(const char *fname) {
     FungeSpace *self = calloc(1, sizeof(FungeSpace));
     FILE *file = NULL;
