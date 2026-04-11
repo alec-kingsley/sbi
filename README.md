@@ -4,20 +4,11 @@ A Befunge-98 interpreter, with support for Concurrent Befunge.
 
 The wrapping algorithm is taken from [cfunge](https://github.com/VorpalBlade/cfunge/blob/29e4cfa1cc1f4553bf0e2908f819e913c32dfda8/src/funge-space/funge-space.c#L664) which in turn was attributed to Elliot Hird.
 
-Passes most of Mycology with a few exceptions:
-- some parts of `y` instruction are not yet implemented
-- There is an infinite loop at the conditional `_` at `204:52`. Replacing it with `>` allows it to proceed. I have not yet debugged why this is.
-
-NOTE: The character at `199:3` is a special character. The Helix editor replaces this with several
-characters on save. Other editors may do the same. Be wary of this when modifying Mycology.
+Passes Mycology, except for unimplemented fingerprints.
 
 `=`, `i`, and `o` not implemented.
 
-Currently, only the `BOOL`, `NULL`, and `ROMA` fingerprints are supported. Mycology claims that these
-do not push the correct fingerprint number, however I have verified the number is correct against
-another interpreter. (Test code: `"LLUN"4($.a,@` should print `1314212940`)
-
-I am not yet sure why Mycology doesn't like my fingerprints.
+Currently, only the `BOOL`, `NULL`, and `ROMA` fingerprints are supported.
 
 ## Installation
 
@@ -31,5 +22,3 @@ After installing, you can test the interpreter.
 Run `./test_mycology.sh` to download and run these tests and verify that the output looks as
 expected.
 
-As noted above, you may wish to edit `./Mycology/mycology.b98` to display further tests
-by replacing the character at `208:52` with `>`
