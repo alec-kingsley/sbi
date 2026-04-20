@@ -6,8 +6,9 @@ typedef struct Interpreter Interpreter;
 
 /**
  * Run interpreter.
+ * Returns return code.
  */
-void interpreter_run(Interpreter *self);
+int interpreter_run(Interpreter *self);
 
 /**
  * Create a new interpreter.

@@ -4,6 +4,7 @@
 #include <time.h>
 
 int main(int argc, char *argv[]) {
+    int return_code;
     Interpreter *interpreter;
     if (argc != 2) {
         report_error("usage: sbi <filename>");
@@ -12,10 +13,10 @@ int main(int argc, char *argv[]) {
     srand(time(NULL));
     interpreter = interpreter_create(argv[1]);
     if (interpreter == NULL) goto main_fail;
-    interpreter_run(interpreter);
+    return_code = interpreter_run(interpreter);
 
     interpreter_destroy(interpreter);
-    return 0;
+    return return_code;
 main_fail:
     return 1;
 }

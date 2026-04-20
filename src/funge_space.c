@@ -23,7 +23,7 @@ struct FungeSpace {
 /**
  * Double the available size in `lines`.
  */
-static void expand_lines(FungeSpace *self) {
+static void expand_lines(FungeSpace *self, bool at_end) {
     const size_t new_line_ct = self->line_ct * 2;
     void *new;
     size_t i;
@@ -36,33 +36,32 @@ static void expand_lines(FungeSpace *self) {
         exit(1);
     }
     self->lines = new;
-    for (i = self->line_ct; i < new_line_ct; i++) {
-        self->lines[i] = funge_line_create();
+    if (at_end) {
+        for (i = self->line_ct; i < new_line_ct; i++) {
+            self->lines[i] = funge_line_create();
+        }
+    } else {
+        memmove(&self->lines[self->line_ct], self->lines,
+                self->line_ct * sizeof(FungeLine *));
+        for (i = 0; i < self->line_ct; i++) {
+            self->lines[i] = funge_line_create();
+        }
+        self->top_left.y -= self->line_ct;
     }
     self->line_ct = new_line_ct;
 }
 
 static void funge_space_ensure_y_exists(FungeSpace *self, int32_t y) {
     size_t distance;
-    size_t i;
+    bool at_end;
     if (y < self->top_left.y) {
-        distance = self->top_left.y - y;
-        if (self->line_ct + distance == self->line_ct) {
-            expand_lines(self);
-        }
-        for (i = self->line_ct - distance; i < self->line_ct; i++) {
-            funge_line_destroy(self->lines[i]);
-        }
-        memmove(&self->lines[distance], self->lines,
-                (self->line_ct - distance) * sizeof(FungeLine *));
-        for (i = 0; i < distance; i++) {
-            self->lines[i] = funge_line_create();
-        }
-        self->top_left.y = y;
+        at_end = false;
+        expand_lines(self, at_end);
     } else {
         distance = y - self->top_left.y;
         if (distance >= self->line_ct) {
-            expand_lines(self);
+            at_end = true;
+            expand_lines(self, at_end);
         }
     }
 }
@@ -88,8 +87,8 @@ static void shrink_funge_corners_to_fit(FungeSpace *self) {
     vector_t pos;
     for (pos.y = self->funge_top_left.y; pos.y <= self->funge_bottom_right.y;
          pos.y++) {
-        for (pos.x = self->funge_top_left.x; pos.x <= self->funge_bottom_right.x;
-             pos.x++) {
+        for (pos.x = self->funge_top_left.x;
+             pos.x <= self->funge_bottom_right.x; pos.x++) {
             c = funge_space_get(self, pos);
             if (c != ' ') {
                 if (pos.y < new_top_left.y) {
@@ -199,6 +198,7 @@ static bool read_file_to_funge_space(FungeSpace *self, FILE *file) {
     return pos.y != 0 || pos.x != 0;
 }
 
+/* TODO - throw error if empty */
 FungeSpace *funge_space_create(const char *fname) {
     FungeSpace *self = calloc(1, sizeof(FungeSpace));
     FILE *file = NULL;
