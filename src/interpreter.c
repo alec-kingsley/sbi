@@ -980,33 +980,36 @@ static void execute_instruction(Interpreter *self, funge_cell_t instr) {
     }
 }
 
+static void next_ip(Interpreter *self) {
+    if (!queue_is_empty(self->other_ips)) {
+        queue_enqueue(self->other_ips, self->ip);
+        self->ip = queue_dequeue(self->other_ips);
+    }
+}
+
 int interpreter_run(Interpreter *self) {
     funge_cell_t instr = funge_space_get(self->funge_space, self->ip->pos);
     while (true) {
-        /*printf(ORANGE "[%c]" RESET, instr);*/
-        if (instr == '@' && !self->ip->string_mode) {
-            if (queue_is_empty(self->other_ips)) {
-                break;
-            } else {
-                instruction_pointer_destroy(self->ip);
-                self->ip = queue_dequeue(self->other_ips);
-            }
+        if (self->ip->string_mode) {
+            execute_string_mode_instruction(self, instr);
+            next_ip(self);
         } else {
-            if (self->ip->string_mode) {
-                execute_string_mode_instruction(self, instr);
-            } else {
-                execute_instruction(self, instr);
-            }
-            if (self->ip->string_mode || (instr != ' ' && instr != ';')) {
-                /* spaces and comments are tickless */
-                if (!queue_is_empty(self->other_ips)) {
-                    /* rotate to next IP */
-                    queue_enqueue(self->other_ips, self->ip);
+            if (instr == '@') {
+                if (queue_is_empty(self->other_ips)) {
+                    break;
+                } else {
+                    instruction_pointer_destroy(self->ip);
                     self->ip = queue_dequeue(self->other_ips);
                 }
+            } else {
+                execute_instruction(self, instr);
+                if (instr == 'q') break;
+            }
+            if (instr != ' ' && instr != ';') {
+                /* spaces and comments are tickless */
+                next_ip(self);
             }
         }
-        if (instr == 'q' && !self->ip->string_mode) break;
         instr = next_instruction(self);
     }
     return self->return_code;

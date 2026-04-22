@@ -200,6 +200,7 @@ static bool read_file_to_funge_space(FungeSpace *self, FILE *file) {
 
 /* TODO - throw error if empty */
 FungeSpace *funge_space_create(const char *fname) {
+    const vector_t origin = {0, 0};
     FungeSpace *self = calloc(1, sizeof(FungeSpace));
     FILE *file = NULL;
     size_t i;
@@ -227,10 +228,8 @@ FungeSpace *funge_space_create(const char *fname) {
         goto funge_space_create_fail;
     }
 
-    self->funge_top_left.x = 0;
-    self->funge_top_left.y = 0;
-    self->funge_bottom_right.x = 0;
-    self->funge_bottom_right.y = 0;
+    self->funge_top_left = origin;
+    self->funge_bottom_right = origin;
     if (!read_file_to_funge_space(self, file)) {
         report_system_error(FILENAME ": empty file");
         goto funge_space_create_fail;
