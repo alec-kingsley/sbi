@@ -865,10 +865,22 @@ static void unload_semantics(Interpreter *self) {
     }
 }
 
+static void end_ip(Interpreter *self) {
+    instruction_pointer_destroy(self->ip);
+    if (queue_is_empty(self->other_ips)) {
+        self->ip = NULL;
+    } else {
+        self->ip = queue_dequeue(self->other_ips);
+    }
+}
+
 static void quit(Interpreter *self) {
-    /* NOTE - doesn't actually cause exit */
-    /* interpreter has to handle that specifically */
     self->return_code = funge_stack_pop(self->ip->stack);
+    while (!queue_is_empty(self->other_ips)) {
+        instruction_pointer_destroy(queue_dequeue(self->other_ips));
+    }
+    instruction_pointer_destroy(self->ip);
+    self->ip = NULL;
 }
 
 static void split(Interpreter *self) {
@@ -972,6 +984,7 @@ static void execute_instruction(Interpreter *self, funge_cell_t instr) {
         case 'y': sys_info(self); break;
         case '(': load_semantics(self); break;
         case ')': unload_semantics(self); break;
+        case '@': end_ip(self); break;
         case 'q': quit(self); break;
         case 't': split(self); break;
         case 'r':
@@ -994,17 +1007,8 @@ int interpreter_run(Interpreter *self) {
             execute_string_mode_instruction(self, instr);
             next_ip(self);
         } else {
-            if (instr == '@') {
-                if (queue_is_empty(self->other_ips)) {
-                    break;
-                } else {
-                    instruction_pointer_destroy(self->ip);
-                    self->ip = queue_dequeue(self->other_ips);
-                }
-            } else {
-                execute_instruction(self, instr);
-                if (instr == 'q') break;
-            }
+            execute_instruction(self, instr);
+            if (!self->ip) break;
             if (instr != ' ' && instr != ';') {
                 /* spaces and comments are tickless */
                 next_ip(self);
